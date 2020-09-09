@@ -1,0 +1,19 @@
+{
+  "name": "no-ref",
+  "version": "0.1.0",
+  "description": "",
+  "main": "dist/index.js",
+  "files": ["dist"],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "cereschen",
+  "license": "MIT",
+  "dependencies": {
+    "magic-string": "^0.25.7",
+    "ts-morph": "^8.1.0"
+  },
+  "devDependencies": {
+    "@types/webpack": "^4.41.22"
+  }
+}
