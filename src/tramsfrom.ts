@@ -1,12 +1,32 @@
-import { ts, Project, Node } from "ts-morph";
+import { ts, Project, Node,VariableDeclaration } from "ts-morph";
 
 import ms from "magic-string"
 type Range = { start: number, end: number }
 export function transformJs () {
   let project = new Project({ useInMemoryFileSystem: true, compilerOptions: { allowJs: true, jsx: 1, target: ts.ScriptTarget.ESNext } })
   return function ({ code }: { code: string }) {
+    const scriptMatch = code.match(/<script[^<]*?>/)
+    if(!scriptMatch) return code
+    const isScriptRefs = !!scriptMatch[0].match(/<script[^]*(?=refs)[^<]*?>/)
+    const isScriptSetup =!!scriptMatch[0].match(/<script[^]*(?=setup)[^<]*?>/)
     const sf = project.createSourceFile('tmp.ts', code, { overwrite: true })
+    if(isScriptRefs){
+      code = code.replace(/ref(?!\s*[\(\)\{\}\,])/g,'let')
+    }
     let s = new ms(code)
+
+    if(false&&isScriptSetup){
+      const transformFn = transformVariableDeclaration(s)
+      
+      sf.getVariableStatements().filter((declaration)=>{
+        return !!declaration.getNodeProperty("modifiers")?.some(item=>{
+         return item.getKind() === ts.SyntaxKind.ExportKeyword
+         })
+      }).map(item=>{
+
+       item.getDeclarations().map(transformFn)
+      })
+    }
     let setup = sf.getFunction('setup')
     if (!setup) {
       let setupFn
@@ -53,20 +73,25 @@ function process (node: Node, s: ms) {
     if (returnNode) {
       range = { start: returnNode.getStart(), end: returnNode.getEnd() }
     }
-
   }
-  node.getVariableDeclarations().map(item => {
-    let nameNode = item.getNameNode()
-    if (Node.isObjectBindingPattern(nameNode)) {
+  let transformFn = transformVariableDeclaration(s,range)
+  node.getVariableDeclarations().map(transformFn)
+}
 
+function transformVariableDeclaration(s:ms,range?:Range|undefined){
+  return function(item:VariableDeclaration){
+    let nameNode = item.getNameNode()
+  
+    
+    if (Node.isObjectBindingPattern(nameNode)) {
+  
       nameNode.getElements().map(item => {
         transformReferences(item, range, s)
       })
     }
     transformReferences(item, range, s)
-  })
+  }
 }
-
 function transformReferences (node: Node, range: Range | undefined, s: ms) {
 
   if (!Node.isBindingElement(node) && !Node.isVariableDeclaration(node)) {
@@ -79,6 +104,7 @@ function transformReferences (node: Node, range: Range | undefined, s: ms) {
     })
     if (match) return
   }
+
   node.findReferences().map(item => {
 
     let definition = item.getDefinition().getNode()
@@ -102,13 +128,4 @@ function transformReferences (node: Node, range: Range | undefined, s: ms) {
   });
 }
 
-//  let result= transformJs()({
-//     code: `export default {
-//     setup(){
-//         const data =2222
-//         console.log(data);
 
-//         console.log(123231);
-
-//     }
-// }`}).code

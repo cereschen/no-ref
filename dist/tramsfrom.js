@@ -10,8 +10,27 @@ function transformJs() {
     let project = new ts_morph_1.Project({ useInMemoryFileSystem: true, compilerOptions: { allowJs: true, jsx: 1, target: ts_morph_1.ts.ScriptTarget.ESNext } });
     return function ({ code }) {
         var _a, _b;
+        const scriptMatch = code.match(/<script[^<]*?>/);
+        if (!scriptMatch)
+            return code;
+        const isScriptRefs = !!scriptMatch[0].match(/<script[^]*(?=refs)[^<]*?>/);
+        const isScriptSetup = !!scriptMatch[0].match(/<script[^]*(?=setup)[^<]*?>/);
         const sf = project.createSourceFile('tmp.ts', code, { overwrite: true });
+        if (isScriptRefs) {
+            code = code.replace(/ref(?!\s*[\(\)\{\}\,])/g, 'let');
+        }
         let s = new magic_string_1.default(code);
+        if (false && isScriptSetup) {
+            const transformFn = transformVariableDeclaration(s);
+            sf.getVariableStatements().filter((declaration) => {
+                var _a;
+                return !!((_a = declaration.getNodeProperty("modifiers")) === null || _a === void 0 ? void 0 : _a.some(item => {
+                    return item.getKind() === ts_morph_1.ts.SyntaxKind.ExportKeyword;
+                }));
+            }).map(item => {
+                item.getDeclarations().map(transformFn);
+            });
+        }
         let setup = sf.getFunction('setup');
         if (!setup) {
             let setupFn;
@@ -54,7 +73,11 @@ function process(node, s) {
             range = { start: returnNode.getStart(), end: returnNode.getEnd() };
         }
     }
-    node.getVariableDeclarations().map(item => {
+    let transformFn = transformVariableDeclaration(s, range);
+    node.getVariableDeclarations().map(transformFn);
+}
+function transformVariableDeclaration(s, range) {
+    return function (item) {
         let nameNode = item.getNameNode();
         if (ts_morph_1.Node.isObjectBindingPattern(nameNode)) {
             nameNode.getElements().map(item => {
@@ -62,7 +85,7 @@ function process(node, s) {
             });
         }
         transformReferences(item, range, s);
-    });
+    };
 }
 function transformReferences(node, range, s) {
     if (!ts_morph_1.Node.isBindingElement(node) && !ts_morph_1.Node.isVariableDeclaration(node)) {
@@ -95,11 +118,3 @@ function transformReferences(node, range, s) {
         });
     });
 }
-//  let result= transformJs()({
-//     code: `export default {
-//     setup(){
-//         const data =2222
-//         console.log(data);
-//         console.log(123231);
-//     }
-// }`}).code

@@ -5,7 +5,7 @@ export declare function createNoRefVite(): {
         test(ctx: any): boolean;
         transform: ({ code }: {
             code: string;
-        }) => {
+        }) => string | {
             code: string;
             map: import("magic-string").SourceMap;
         };
