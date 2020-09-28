@@ -1,30 +1,39 @@
-import { ts, Project, Node,VariableDeclaration } from "ts-morph";
+import { ts, Project, Node, VariableDeclaration } from "ts-morph";
 
 import ms from "magic-string"
 type Range = { start: number, end: number }
-export function transformJs () {
+export function transformJs() {
   let project = new Project({ useInMemoryFileSystem: true, compilerOptions: { allowJs: true, jsx: 1, target: ts.ScriptTarget.ESNext } })
   return function ({ code }: { code: string }) {
-    const scriptMatch = code.match(/<script[^<]*?>/)
-    if(!scriptMatch) return code
-    const isScriptRefs = !!scriptMatch[0].match(/<script[^]*(?=refs)[^<]*?>/)
-    const isScriptSetup =!!scriptMatch[0].match(/<script[^]*(?=setup)[^<]*?>/)
-    const sf = project.createSourceFile('tmp.ts', code, { overwrite: true })
-    if(isScriptRefs){
-      code = code.replace(/ref(?!\s*[\(\)\{\}\,])/g,'let')
+    const scriptMatch = code.match(/([^]*)(<\s*script[^<]*?>[\r\n\s]*)([^]*)([\r\n\s]*<\/\s*script\s*>[^]*)/)
+    const s = new ms(code)
+    const isScriptRefs = !!scriptMatch?.[2].match(/<script[^]*(?=refs)[^<]*?>/)
+    const isScriptSetup = !!scriptMatch?.[2].match(/<script[^]*(?=setup)[^<]*?>/)
+    let offset = scriptMatch ? (scriptMatch[1].length + scriptMatch[2].length) : 0
+    let scriptCode = code
+    if (scriptMatch) {
+      if (isScriptRefs) {
+        for (let match of scriptMatch[3].matchAll(/ref(?!\s*[\(\)\{\}\,])/g)) {
+          if (match.index) {
+            s.overwrite(match.index + offset, match.index + match[0].length + offset, 'let')
+          }
+        }
+        scriptCode = s.toString().substr(offset, scriptMatch[3].length)
+      } else {
+        scriptCode = scriptMatch[3]
+      }
     }
-    let s = new ms(code)
-
-    if(false&&isScriptSetup){
-      const transformFn = transformVariableDeclaration(s)
-      
-      sf.getVariableStatements().filter((declaration)=>{
-        return !!declaration.getNodeProperty("modifiers")?.some(item=>{
-         return item.getKind() === ts.SyntaxKind.ExportKeyword
-         })
-      }).map(item=>{
-
-       item.getDeclarations().map(transformFn)
+    const sf = project.createSourceFile('tmp.ts', scriptCode, { overwrite: true })
+    if (isScriptSetup) {
+      const transformFn = transformVariableDeclaration(s, undefined, offset)
+      sf.getVariableStatements().filter((declaration) => {
+        let modifiers = declaration.getNodeProperty("modifiers")
+        if (!modifiers) return false
+        return modifiers.some(item => {
+          return item.getKind() === ts.SyntaxKind.ExportKeyword
+        })
+      }).map(item => {
+        item.getDeclarations().map(transformFn)
       })
     }
     let setup = sf.getFunction('setup')
@@ -55,12 +64,13 @@ export function transformJs () {
     } else {
       process(setup, s)
     }
+
     return { code: s.toString(), map: s.generateMap() }
   }
 }
 
 
-function process (node: Node, s: ms) {
+function process(node: Node, s: ms) {
 
   let range: Range | undefined
 
@@ -74,25 +84,25 @@ function process (node: Node, s: ms) {
       range = { start: returnNode.getStart(), end: returnNode.getEnd() }
     }
   }
-  let transformFn = transformVariableDeclaration(s,range)
+  let transformFn = transformVariableDeclaration(s, range)
   node.getVariableDeclarations().map(transformFn)
 }
 
-function transformVariableDeclaration(s:ms,range?:Range|undefined){
-  return function(item:VariableDeclaration){
+function transformVariableDeclaration(s: ms, range?: Range | undefined, offset = 0) {
+  return function (item: VariableDeclaration) {
     let nameNode = item.getNameNode()
-  
-    
+
+
     if (Node.isObjectBindingPattern(nameNode)) {
-  
+
       nameNode.getElements().map(item => {
-        transformReferences(item, range, s)
+        transformReferences(item, range, s, offset)
       })
     }
-    transformReferences(item, range, s)
+    transformReferences(item, range, s, offset)
   }
 }
-function transformReferences (node: Node, range: Range | undefined, s: ms) {
+function transformReferences(node: Node, range: Range | undefined, s: ms, offset: number = 0) {
 
   if (!Node.isBindingElement(node) && !Node.isVariableDeclaration(node)) {
     return
@@ -114,7 +124,8 @@ function transformReferences (node: Node, range: Range | undefined, s: ms) {
     if (Node.isArrowFunction(content) || Node.isFunctionExpression(content) || Node.isCallExpression(content)) {
       return
     }
-    if (content) s.overwrite(content.getStart(), content.getEnd(), `ref(${content.getText()})`);
+    if (content) s.overwrite(content.getStart() + offset, content.getEnd() + offset, `ref(${content.getText()})`);
+
     item.getReferences().map((item, i) => {
       let node = item.getNode()
       if (i !== 0 && !node.getParentIfKind(ts.SyntaxKind.ParenthesizedExpression)) {
@@ -122,7 +133,7 @@ function transformReferences (node: Node, range: Range | undefined, s: ms) {
         if (range && node.getStart() > range.start && node.getEnd() < range.end) {
           return
         }
-        s.appendLeft(node.getEnd(), '.value')
+        s.appendLeft(node.getEnd() + offset, '.value')
       }
     })
   });

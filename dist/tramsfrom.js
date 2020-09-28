@@ -10,23 +10,35 @@ function transformJs() {
     let project = new ts_morph_1.Project({ useInMemoryFileSystem: true, compilerOptions: { allowJs: true, jsx: 1, target: ts_morph_1.ts.ScriptTarget.ESNext } });
     return function ({ code }) {
         var _a, _b;
-        const scriptMatch = code.match(/<script[^<]*?>/);
-        if (!scriptMatch)
-            return code;
-        const isScriptRefs = !!scriptMatch[0].match(/<script[^]*(?=refs)[^<]*?>/);
-        const isScriptSetup = !!scriptMatch[0].match(/<script[^]*(?=setup)[^<]*?>/);
-        const sf = project.createSourceFile('tmp.ts', code, { overwrite: true });
-        if (isScriptRefs) {
-            code = code.replace(/ref(?!\s*[\(\)\{\}\,])/g, 'let');
+        const scriptMatch = code.match(/([^]*)(<\s*script[^<]*?>[\r\n\s]*)([^]*)([\r\n\s]*<\/\s*script\s*>[^]*)/);
+        const s = new magic_string_1.default(code);
+        const isScriptRefs = !!(scriptMatch === null || scriptMatch === void 0 ? void 0 : scriptMatch[2].match(/<script[^]*(?=refs)[^<]*?>/));
+        const isScriptSetup = !!(scriptMatch === null || scriptMatch === void 0 ? void 0 : scriptMatch[2].match(/<script[^]*(?=setup)[^<]*?>/));
+        let offset = scriptMatch ? (scriptMatch[1].length + scriptMatch[2].length) : 0;
+        let scriptCode = code;
+        if (scriptMatch) {
+            if (isScriptRefs) {
+                for (let match of scriptMatch[3].matchAll(/ref(?!\s*[\(\)\{\}\,])/g)) {
+                    if (match.index) {
+                        s.overwrite(match.index + offset, match.index + match[0].length + offset, 'let');
+                    }
+                }
+                scriptCode = s.toString().substr(offset, scriptMatch[3].length);
+            }
+            else {
+                scriptCode = scriptMatch[3];
+            }
         }
-        let s = new magic_string_1.default(code);
-        if (false && isScriptSetup) {
-            const transformFn = transformVariableDeclaration(s);
+        const sf = project.createSourceFile('tmp.ts', scriptCode, { overwrite: true });
+        if (isScriptSetup) {
+            const transformFn = transformVariableDeclaration(s, undefined, offset);
             sf.getVariableStatements().filter((declaration) => {
-                var _a;
-                return !!((_a = declaration.getNodeProperty("modifiers")) === null || _a === void 0 ? void 0 : _a.some(item => {
+                let modifiers = declaration.getNodeProperty("modifiers");
+                if (!modifiers)
+                    return false;
+                return modifiers.some(item => {
                     return item.getKind() === ts_morph_1.ts.SyntaxKind.ExportKeyword;
-                }));
+                });
             }).map(item => {
                 item.getDeclarations().map(transformFn);
             });
@@ -76,18 +88,18 @@ function process(node, s) {
     let transformFn = transformVariableDeclaration(s, range);
     node.getVariableDeclarations().map(transformFn);
 }
-function transformVariableDeclaration(s, range) {
+function transformVariableDeclaration(s, range, offset = 0) {
     return function (item) {
         let nameNode = item.getNameNode();
         if (ts_morph_1.Node.isObjectBindingPattern(nameNode)) {
             nameNode.getElements().map(item => {
-                transformReferences(item, range, s);
+                transformReferences(item, range, s, offset);
             });
         }
-        transformReferences(item, range, s);
+        transformReferences(item, range, s, offset);
     };
 }
-function transformReferences(node, range, s) {
+function transformReferences(node, range, s, offset = 0) {
     if (!ts_morph_1.Node.isBindingElement(node) && !ts_morph_1.Node.isVariableDeclaration(node)) {
         return;
     }
@@ -106,14 +118,14 @@ function transformReferences(node, range, s) {
             return;
         }
         if (content)
-            s.overwrite(content.getStart(), content.getEnd(), `ref(${content.getText()})`);
+            s.overwrite(content.getStart() + offset, content.getEnd() + offset, `ref(${content.getText()})`);
         item.getReferences().map((item, i) => {
             let node = item.getNode();
             if (i !== 0 && !node.getParentIfKind(ts_morph_1.ts.SyntaxKind.ParenthesizedExpression)) {
                 if (range && node.getStart() > range.start && node.getEnd() < range.end) {
                     return;
                 }
-                s.appendLeft(node.getEnd(), '.value');
+                s.appendLeft(node.getEnd() + offset, '.value');
             }
         });
     });
