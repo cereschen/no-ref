@@ -1,6 +1,10 @@
 /// <reference types="node" />
 import * as webpack from "webpack";
-export declare function createNoRefVite(): {
+import { OptionObject } from 'loader-utils';
+export interface NoRefConfig extends OptionObject {
+    isVue3: boolean;
+}
+export declare function createNoRefVite(config: NoRefConfig): {
     transforms: {
         test(ctx: any): boolean;
         transform: ({ code }: {

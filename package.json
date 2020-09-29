@@ -1,6 +1,6 @@
 {
   "name": "no-ref",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "",
   "main": "dist/index.js",
   "files": [
@@ -13,10 +13,12 @@
   "author": "cereschen",
   "license": "MIT",
   "dependencies": {
+    "loader-utils": "^2.0.0",
     "magic-string": "^0.25.7",
     "ts-morph": "^8.1.0"
   },
   "devDependencies": {
+    "@types/loader-utils": "^2.0.1",
     "@types/webpack": "^4.41.22"
   }
 }

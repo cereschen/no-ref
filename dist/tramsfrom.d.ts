@@ -1,4 +1,7 @@
-export declare function transformJs(): ({ code }: {
+import { NoRefConfig } from ".";
+export declare function transformJs(config: NoRefConfig & {
+    isVite: boolean;
+}): ({ code }: {
     code: string;
 }) => {
     code: string;

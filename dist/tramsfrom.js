@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.transformJs = void 0;
 const ts_morph_1 = require("ts-morph");
 const magic_string_1 = __importDefault(require("magic-string"));
-function transformJs() {
+function transformJs(config) {
     let project = new ts_morph_1.Project({ useInMemoryFileSystem: true, compilerOptions: { allowJs: true, jsx: 1, target: ts_morph_1.ts.ScriptTarget.ESNext } });
     return function ({ code }) {
         var _a, _b;
@@ -67,6 +67,30 @@ function transformJs() {
         }
         else {
             process(setup, s);
+        }
+        let vueImport = sf.getImportDeclaration((ImportDeclaration) => {
+            let moduleName = ImportDeclaration.getModuleSpecifier().getText();
+            return !!moduleName.match(/['"](vue|@vue\/composition-api)['"]/);
+        });
+        if (!vueImport) {
+            s.prependLeft(offset, `import { ref } from '${config.isVite ? '/@modules/' : ''}${config.isVue3 ? config.isVite ? 'vue.js' : 'vue' : '@vue/composition-api'}'\n`);
+        }
+        else {
+            let ImportClause = vueImport.getImportClause();
+            let NamedBindings = ImportClause === null || ImportClause === void 0 ? void 0 : ImportClause.getNamedBindings();
+            let isRefImported = false;
+            let vueImports = [];
+            if (ts_morph_1.Node.isNamedImports(NamedBindings)) {
+                vueImports = NamedBindings.getElements().map(item => {
+                    let text = item.getText();
+                    if (text === 'ref')
+                        isRefImported = true;
+                    return text;
+                });
+            }
+            if (!isRefImported && NamedBindings) {
+                s.overwrite(NamedBindings.getStart() + offset, NamedBindings.getEnd() + offset, vueImports ? `{${vueImports.join(',')} , ref }` : '{ ref }');
+            }
         }
         return { code: s.toString(), map: s.generateMap() };
     };
